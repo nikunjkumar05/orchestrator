@@ -11,8 +11,8 @@ import warnings
 import time
 from langchain_community.tools.tavily_search import TavilySearchResults
 
-# Suppress the annoying duckduckgo_search rename warning
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
+# Suppress all duckduckgo_search package warnings
+warnings.filterwarnings("ignore", message=".*duckduckgo_search.*")
 
 # 1. Web Search Tool
 @tool
