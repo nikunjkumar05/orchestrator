@@ -4,7 +4,7 @@ from app.agent.tools import all_tools
 
 # Initialize the main reasoning LLM
 # Ensure MISTRAL_API_KEY is set in your environment
-llm = ChatMistralAI(model="mistral-large-latest", temperature=0)
+llm = ChatMistralAI(model="mistral-large-latest", temperature=0.05)
 
 # Create the ReAct agent using LangGraph's prebuilt function
 # This automatically handles the ToolNode and state management
