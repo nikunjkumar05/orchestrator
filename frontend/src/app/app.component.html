@@ -1,0 +1,55 @@
+<div class="app-container">
+  <header class="app-header">
+    <div class="header-content">
+      <h1>🚀 Orchestrator Agent</h1>
+      <p>Powered by Mistral AI, LangGraph, & FastAPI</p>
+    </div>
+  </header>
+
+  <main class="main-content">
+    
+    <!-- Input Section -->
+    <div class="glass-card input-section">
+      <div class="input-wrapper">
+        <textarea 
+          [(ngModel)]="prompt" 
+          placeholder="Ask the agent to do something (e.g., 'Search the web for the current price of Bitcoin')"
+          (keyup.enter)="executePrompt()">
+        </textarea>
+        <button class="primary-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim()">
+          <span *ngIf="!isLoading">Execute</span>
+          <div *ngIf="isLoading" class="spinner"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Error State -->
+    <div *ngIf="error" class="error-banner glass-card">
+      ⚠️ {{ error }}
+    </div>
+
+    <!-- Results Section -->
+    <div *ngIf="response" class="results-section">
+      
+      <!-- Final Result -->
+      <div class="glass-card final-result">
+        <h2>✨ Final Answer</h2>
+        <div class="markdown-body" [innerHTML]="parseMarkdown(response.result)">
+        </div>
+      </div>
+
+      <!-- Agent Thought Process -->
+      <div class="glass-card thought-process">
+        <h3>🧠 Agent Thought Process</h3>
+        <ul class="message-list">
+          <li *ngFor="let msg of response.messages" [ngClass]="'msg-' + msg.type">
+            <div class="msg-header">{{ msg.type | uppercase }}</div>
+            <div class="msg-content" [innerHTML]="formatMessage(msg)"></div>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+
+  </main>
+</div>
