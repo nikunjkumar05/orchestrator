@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: prompt-to-agent-orchestrator
+    env: docker
+    region: oregon # Or choose your preferred region
+    plan: free # Can be upgraded to 'starter' etc.
+    disk:
+      name: orchestrator-workspace
+      mountPath: /app/workspace
+      sizeGB: 1
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false # Requires you to input this value manually in the Render dashboard for security

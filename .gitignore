@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Orchestrator workspace (prevent committing agent-generated files or databases)
+workspace/
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
