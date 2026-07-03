@@ -7,21 +7,35 @@ from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 from langchain_mistralai import ChatMistralAI
 
+import warnings
+import time
+
+# Suppress the annoying duckduckgo_search rename warning
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
+
 # 1. Web Search Tool
 @tool
 def search_tool(query: str) -> str:
     """Search the web for information using DuckDuckGo."""
-    try:
-        results = DDGS().text(query, max_results=5)
-        return str([r for r in results])
-    except Exception as e:
-        return f"Search failed: {e}"
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            results = DDGS().text(query, max_results=5)
+            parsed_results = [r for r in results]
+            if parsed_results:
+                return str(parsed_results)
+            # If results are empty, sleep briefly and retry (could be temporary rate-limiting)
+            time.sleep(1)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return f"Search failed after {max_retries} attempts: {e}"
+            time.sleep(1)
+    return "Search returned no results. Try rephrasing your query."
 
 # 2. Code Execution Tool
 python_repl_tool = PythonREPLTool()
 
 # 3. File I/O Tools
-# Create a workspace directory for safe file I/O
 workspace_dir = os.path.join(os.getcwd(), "workspace")
 os.makedirs(workspace_dir, exist_ok=True)
 file_toolkit = FileManagementToolkit(
@@ -31,11 +45,9 @@ file_toolkit = FileManagementToolkit(
 file_tools = file_toolkit.get_tools()
 
 # 4. Database Tool
-# We'll use a local SQLite database for zero-config
 db_path = os.path.join(workspace_dir, "orchestrator.db")
 db = SQLDatabase.from_uri(f"sqlite:///{db_path}")
 
-# Initialize a dummy LLM for the SQL toolkit (it needs one to generate SQL queries)
 # Note: For LangGraph, the main reasoning LLM is separate, but SQL toolkit bundles its own logic.
 llm = ChatMistralAI(model="mistral-large-latest", temperature=0)
 sql_toolkit = SQLDatabaseToolkit(db=db, llm=llm)
