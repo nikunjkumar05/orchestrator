@@ -8,3 +8,6 @@ services:
     envVars:
       - key: MISTRAL_API_KEY
         sync: false # Requires you to input this value manually in the Render dashboard for security
+      - key: TAVILY_API_KEY
+        sync: false
+        optional: true

@@ -9,6 +9,7 @@ from langchain_mistralai import ChatMistralAI
 
 import warnings
 import time
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 # Suppress the annoying duckduckgo_search rename warning
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
@@ -16,7 +17,19 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_se
 # 1. Web Search Tool
 @tool
 def search_tool(query: str) -> str:
-    """Search the web for information using DuckDuckGo."""
+    """Search the web for information using Tavily (on Cloud) or DuckDuckGo (Locally)."""
+    # 1. Try Tavily search first if API key is provided (highly recommended for Cloud/Render)
+    if os.getenv("TAVILY_API_KEY"):
+        try:
+            tavily = TavilySearchResults(max_results=5)
+            results = tavily.invoke(query)
+            if results:
+                return str(results)
+        except Exception as e:
+            # Log error internally and fall back
+            print(f"Tavily search failed, falling back to DuckDuckGo: {e}")
+
+    # 2. Fallback to DuckDuckGo (good for local testing, but gets blocked in cloud datacenters)
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -24,7 +37,6 @@ def search_tool(query: str) -> str:
             parsed_results = [r for r in results]
             if parsed_results:
                 return str(parsed_results)
-            # If results are empty, sleep briefly and retry (could be temporary rate-limiting)
             time.sleep(1)
         except Exception as e:
             if attempt == max_retries - 1:
