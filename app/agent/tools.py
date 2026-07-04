@@ -1,15 +1,16 @@
 import os
+import time
+import warnings
 from langchain_core.tools import tool
 from duckduckgo_search import DDGS
-from langchain_experimental.tools.python.tool import PythonREPLTool
+from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
-from langchain_mistralai import ChatMistralAI
-
-import warnings
-import time
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from e2b_code_interpreter import CodeInterpreter
 
 # Suppress all duckduckgo_search package warnings
 warnings.filterwarnings("ignore", message=".*duckduckgo_search.*")
@@ -18,7 +19,6 @@ warnings.filterwarnings("ignore", message=".*duckduckgo_search.*")
 @tool
 def search_tool(query: str) -> str:
     """Search the web for information using Tavily (on Cloud) or DuckDuckGo (Locally)."""
-    # 1. Try Tavily search first if API key is provided (highly recommended for Cloud/Render)
     if os.getenv("TAVILY_API_KEY"):
         try:
             tavily = TavilySearchResults(max_results=5)
@@ -26,10 +26,8 @@ def search_tool(query: str) -> str:
             if results:
                 return str(results)
         except Exception as e:
-            # Log error internally and fall back
             print(f"Tavily search failed, falling back to DuckDuckGo: {e}")
 
-    # 2. Fallback to DuckDuckGo (good for local testing, but gets blocked in cloud datacenters)
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -44,8 +42,34 @@ def search_tool(query: str) -> str:
             time.sleep(1)
     return "Search returned no results. Try rephrasing your query."
 
-# 2. Code Execution Tool
-python_repl_tool = PythonREPLTool()
+# 2. Secure Code Execution Sandbox (E2B)
+@tool
+def e2b_sandbox_tool(code: str) -> str:
+    """Execute Python code inside a secure, ephemeral cloud sandbox.
+    Use this to run algorithms, analyze files, process data, or perform calculations.
+    """
+    if not os.getenv("E2B_API_KEY"):
+        return "Error: E2B_API_KEY is not set in the environment. Secure sandbox is unavailable."
+    
+    try:
+        with CodeInterpreter() as sandbox:
+            exec_result = sandbox.notebook.exec_cell(code)
+            
+            output = ""
+            if exec_result.results:
+                for result in exec_result.results:
+                    if result.is_image:
+                        output += "[Chart/Visualization generated successfully]\n"
+                    else:
+                        output += f"{result}\n"
+            if exec_result.logs.stdout:
+                output += "".join(exec_result.logs.stdout)
+            if exec_result.logs.stderr:
+                output += "[ERROR] " + "".join(exec_result.logs.stderr)
+            
+            return output if output else "Code executed successfully with no output."
+    except Exception as e:
+        return f"Sandbox execution failed: {str(e)}"
 
 # 3. File I/O Tools
 workspace_dir = os.path.join(os.getcwd(), "workspace")
@@ -56,14 +80,50 @@ file_toolkit = FileManagementToolkit(
 )
 file_tools = file_toolkit.get_tools()
 
-# 4. Database Tool
+# 4. RAG / Vector Database Tools (ChromaDB)
+embeddings = MistralAIEmbeddings(model="mistral-embed")
+chroma_dir = os.path.join(workspace_dir, "chroma")
+vector_store = Chroma(
+    persist_directory=chroma_dir,
+    embedding_function=embeddings
+)
+
+@tool
+def index_document_tool(filename: str, content: str) -> str:
+    """Index a document's content into the vector database for semantic RAG search.
+    Args:
+        filename: The filename or title.
+        content: The text content of the document.
+    """
+    try:
+        doc = Document(page_content=content, metadata={"source": filename})
+        vector_store.add_documents([doc])
+        return f"Successfully indexed '{filename}' into vector database."
+    except Exception as e:
+        return f"Failed to index document: {e}"
+
+@tool
+def semantic_search_tool(query: str) -> str:
+    """Perform a semantic search across all indexed workspace files to retrieve relevant content.
+    Use this to answer questions using files or databases you indexed.
+    """
+    try:
+        results = vector_store.similarity_search(query, k=3)
+        if not results:
+            return "No relevant sections found in vector database."
+        output = []
+        for i, doc in enumerate(results):
+            output.append(f"[Result {i+1} - Source: {doc.metadata.get('source')}]:\n{doc.page_content}\n")
+        return "\n".join(output)
+    except Exception as e:
+        return f"Semantic search failed: {e}"
+
+# 5. SQL Database Tools
 db_path = os.path.join(workspace_dir, "orchestrator.db")
 db = SQLDatabase.from_uri(f"sqlite:///{db_path}")
-
-# Note: For LangGraph, the main reasoning LLM is separate, but SQL toolkit bundles its own logic.
 llm = ChatMistralAI(model="mistral-large-latest", temperature=0)
 sql_toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 sql_tools = sql_toolkit.get_tools()
 
 # Combine all tools
-all_tools = [search_tool, python_repl_tool] + file_tools + sql_tools
+all_tools = [search_tool, e2b_sandbox_tool, index_document_tool, semantic_search_tool] + file_tools + sql_tools

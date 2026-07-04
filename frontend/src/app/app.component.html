@@ -13,10 +13,11 @@
       <div class="input-wrapper">
         <textarea 
           [(ngModel)]="prompt" 
-          placeholder="Ask the agent to do something (e.g., 'Search the web for the current price of Bitcoin')"
-          (keyup.enter)="executePrompt()">
+          placeholder="Ask the agent to do something (e.g., 'Write a Python script to plot a graph' or 'Index this document')"
+          (keyup.enter)="executePrompt()"
+          [disabled]="isLoading || isWaitingForApproval">
         </textarea>
-        <button class="primary-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim()">
+        <button class="primary-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim() || isWaitingForApproval">
           <span *ngIf="!isLoading">Execute</span>
           <div *ngIf="isLoading" class="spinner"></div>
         </button>
@@ -28,23 +29,41 @@
       ⚠️ {{ error }}
     </div>
 
-    <!-- Results Section -->
-    <div *ngIf="response" class="results-section">
+    <!-- Human-in-the-Loop Intercept Card -->
+    <div *ngIf="isWaitingForApproval && pendingApproval" class="approval-card glass-card">
+      <div class="approval-header">
+        <span class="warning-icon">🛡️</span>
+        <h3>Permission Required</h3>
+      </div>
+      <p>The agent is requesting access to execute a tool:</p>
       
-      <!-- Final Result -->
-      <div class="glass-card final-result">
-        <h2>✨ Final Answer</h2>
-        <div class="markdown-body" [innerHTML]="parseMarkdown(response.result)">
-        </div>
+      <div class="tool-details">
+        <div><strong>Tool Name:</strong> <code>{{ pendingApproval.tool }}</code></div>
+        <div><strong>Arguments:</strong></div>
+        <pre><code>{{ formatArgs(pendingApproval.args) }}</code></pre>
       </div>
 
-      <!-- Agent Thought Process -->
-      <div class="glass-card thought-process">
-        <h3>🧠 Agent Thought Process</h3>
+      <div class="approval-actions">
+        <button class="approve-btn" (click)="submitApproval(true)">Approve</button>
+        <button class="deny-btn" (click)="submitApproval(false)">Deny</button>
+      </div>
+    </div>
+
+    <!-- Live Execution Results -->
+    <div *ngIf="streamedAnswer || logs.length > 0" class="results-section">
+      
+      <!-- Live Answer Stream -->
+      <div *ngIf="streamedAnswer" class="glass-card final-result">
+        <h2>✨ Agent Response</h2>
+        <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
+      </div>
+
+      <!-- Live Stream Logs -->
+      <div *ngIf="logs.length > 0" class="glass-card thought-process">
+        <h3>🧠 Agent Activity Log</h3>
         <ul class="message-list">
-          <li *ngFor="let msg of response.messages" [ngClass]="'msg-' + msg.type">
-            <div class="msg-header">{{ msg.type | uppercase }}</div>
-            <div class="msg-content" [innerHTML]="formatMessage(msg)"></div>
+          <li *ngFor="let log of logs" class="log-item">
+            <div class="msg-content">{{ log.content }}</div>
           </li>
         </ul>
       </div>

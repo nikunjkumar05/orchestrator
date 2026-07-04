@@ -1,27 +1,18 @@
 from langgraph.prebuilt import create_react_agent
 from langchain_mistralai import ChatMistralAI
+from langgraph.checkpoint.memory import MemorySaver
 from app.agent.tools import all_tools
 
-# Initialize the main reasoning LLM
-# Ensure MISTRAL_API_KEY is set in your environment
+# Initialize LLM
 llm = ChatMistralAI(model="mistral-large-latest", temperature=0.05)
 
-# Create the ReAct agent using LangGraph's prebuilt function
-# This automatically handles the ToolNode and state management
-agent_executor = create_react_agent(llm, all_tools)
+# Initialize checkpointer for HITL state persistence
+memory = MemorySaver()
 
-def run_agent(prompt: str) -> dict:
-    """
-    Runs the LangGraph agent with a given prompt.
-    """
-    inputs = {"messages": [("user", prompt)]}
-    # Invoke the agent executor
-    result = agent_executor.invoke(inputs)
-    
-    # Extract the final message content
-    final_message = result["messages"][-1].content
-    
-    return {
-        "result": final_message,
-        "messages": [msg.model_dump() for msg in result["messages"]]
-    }
+# Compile the ReAct agent graph with checkpoints and HITL interrupts before executing tools
+agent_executor = create_react_agent(
+    llm, 
+    all_tools,
+    checkpointer=memory,
+    interrupt_before=["tools"]
+)
