@@ -1,21 +1,77 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-:root {
+/* Dark Theme (default) */
+:root,
+[data-theme="dark"] {
   --bg-dark: #0f172a;
   --bg-card: rgba(30, 41, 59, 0.7);
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --accent: #3b82f6;
   --accent-hover: #2563eb;
+  --accent-light: #60a5fa;
+  --accent-bg: rgba(59, 130, 246, 0.15);
   --border: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.05);
   --glass-blur: 12px;
+  --input-bg: rgba(15, 23, 42, 0.6);
+  --purple: #a855f7;
+  --success: #10b981;
+  --success-hover: #059669;
+  --error: #ef4444;
+  --error-hover: #dc2626;
+  --error-border: rgba(239, 68, 68, 0.4);
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-text: #fca5a5;
+  --warning: #f59e0b;
+  --warning-border: rgba(245, 158, 11, 0.4);
+  --warning-glow: rgba(245, 158, 11, 0.2);
+  --code-bg: #080c16;
+  --code-header-bg: rgba(59, 130, 246, 0.12);
+  --code-text: #e2e8f0;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  --bg-dark: #f1f5f9;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #3b82f6;
+  --accent-bg: rgba(37, 99, 235, 0.1);
+  --border: rgba(0, 0, 0, 0.1);
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --glass-blur: 12px;
+  --input-bg: rgba(241, 245, 249, 0.8);
+  --purple: #9333ea;
+  --success: #059669;
+  --success-hover: #047857;
+  --error: #dc2626;
+  --error-hover: #b91c1c;
+  --error-border: rgba(220, 38, 38, 0.3);
+  --error-bg: rgba(220, 38, 38, 0.08);
+  --error-text: #b91c1c;
+  --warning: #d97706;
+  --warning-border: rgba(217, 119, 6, 0.3);
+  --warning-glow: rgba(217, 119, 6, 0.15);
+  --code-bg: #e4e8ee;
+  --code-header-bg: rgba(37, 99, 235, 0.1);
+  --code-text: #1e293b;
+}
+
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(147, 51, 234, 0.08) 0px, transparent 50%);
 }
 
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-dark);
-  background-image: 
+  background-image:
     radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
     radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
   background-attachment: fixed;
@@ -30,5 +86,162 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128, 128, 128, 0.5); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   GLOBAL STYLES for innerHTML-injected content (parseMarkdown)
+   These classes are NOT in the Angular template — they're
+   injected via innerHTML, so component-scoped CSS can't reach them.
+   ============================================================ */
+
+/* Code Block */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0.75rem 0;
+}
+
+.code-header {
+  background: var(--code-header-bg);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--accent-light);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Copy Button - invisible by default, fades in on hover */
+.copy-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  cursor: pointer;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.code-header:hover .copy-btn {
+  opacity: 0.6;
+}
+
+.copy-btn:hover {
+  opacity: 1 !important;
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.copy-btn.copied {
+  opacity: 1 !important;
+  color: var(--success);
+}
+
+.copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.lang-label {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  text-transform: lowercase;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 0.75rem;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--code-text);
+  white-space: pre;
+  display: block;
+  word-wrap: normal;
+  tab-size: 4;
+}
+
+.inline-code {
+  background: var(--code-header-bg);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85em;
+  color: var(--accent-light);
+}
+
+/* Markdown Body (innerHTML-injected) */
+.markdown-body {
+  color: var(--text-main);
+  line-height: 1.7;
+  font-size: 0.95rem;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-body h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 0.75rem; color: var(--text-main); }
+.markdown-body h2 { font-size: 1.3rem; font-weight: 700; margin: 1.25rem 0 0.5rem; color: var(--text-main); }
+.markdown-body h3 { font-size: 1.15rem; font-weight: 600; margin: 1rem 0 0.5rem; color: var(--text-main); }
+.markdown-body h4 { font-size: 1.05rem; font-weight: 600; margin: 0.75rem 0 0.5rem; color: var(--text-muted); }
+.markdown-body h5 { font-size: 0.95rem; font-weight: 600; margin: 0.5rem 0 0.25rem; color: var(--text-muted); }
+
+.markdown-body p { margin: 0 0 0.75rem; }
+
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--code-header-bg);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.markdown-body ul, .markdown-body ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.markdown-body li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+
+.markdown-body strong { font-weight: 700; color: var(--text-main); }
+.markdown-body em { font-style: italic; }
+
+.markdown-body a.result-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.markdown-body a.result-link:hover {
+  text-decoration: underline;
+}

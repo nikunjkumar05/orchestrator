@@ -1,9 +1,13 @@
 <div class="app-container">
   <header class="app-header">
     <div class="header-content">
-      <h1>🚀 Orchestrator Agent</h1>
+      <h1>Orchestrator Agent</h1>
       <p>Powered by Mistral AI, LangGraph, & FastAPI</p>
     </div>
+    <button class="theme-toggle" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
+      <span *ngIf="isDarkTheme">&#9790;</span>
+      <span *ngIf="!isDarkTheme">&#9728;</span>
+    </button>
   </header>
 
   <main class="main-content">
@@ -13,8 +17,8 @@
       <div class="input-wrapper">
         <textarea 
           [(ngModel)]="prompt" 
-          placeholder="Ask the agent to do something (e.g., 'Write a Python script to plot a graph' or 'Index this document')"
-          (keyup.enter)="executePrompt()"
+          placeholder="Ask the agent to do something (e.g., 'Write a Python script to plot a graph')"
+          (keydown)="handleKeydown($event)"
           [disabled]="isLoading || isWaitingForApproval">
         </textarea>
         <button class="primary-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim() || isWaitingForApproval">
@@ -22,17 +26,18 @@
           <div *ngIf="isLoading" class="spinner"></div>
         </button>
       </div>
+      <div class="input-hint">Press Enter to send, Shift+Enter for new line</div>
     </div>
 
     <!-- Error State -->
     <div *ngIf="error" class="error-banner glass-card">
-      ⚠️ {{ error }}
+      {{ error }}
     </div>
 
     <!-- Human-in-the-Loop Intercept Card -->
     <div *ngIf="isWaitingForApproval && pendingApproval" class="approval-card glass-card">
       <div class="approval-header">
-        <span class="warning-icon">🛡️</span>
+        <span class="warning-icon">&#128737;</span>
         <h3>Permission Required</h3>
       </div>
       <p>The agent is requesting access to execute a tool:</p>
@@ -54,13 +59,13 @@
       
       <!-- Live Answer Stream -->
       <div *ngIf="streamedAnswer" class="glass-card final-result">
-        <h2>✨ Agent Response</h2>
+        <h2>Agent Response</h2>
         <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
       </div>
 
       <!-- File Previews -->
       <div *ngIf="filePreviews.length > 0" class="glass-card file-preview-section">
-        <h2>📁 Generated Files</h2>
+        <h2>Generated Files</h2>
         <div *ngFor="let preview of filePreviews" class="file-preview-item">
           <div class="markdown-body" [innerHTML]="parseMarkdown(preview)"></div>
         </div>
@@ -68,7 +73,7 @@
 
       <!-- Live Stream Logs -->
       <div *ngIf="logs.length > 0" class="glass-card thought-process">
-        <h3>🧠 Agent Activity Log</h3>
+        <h3>Agent Activity Log</h3>
         <ul class="message-list">
           <li *ngFor="let log of logs" class="log-item">
             <div class="msg-content">{{ log.content }}</div>

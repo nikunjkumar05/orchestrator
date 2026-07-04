@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, AfterViewInit, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -15,23 +15,74 @@ interface ThoughtLog {
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css']
 })
-export class AppComponent implements OnDestroy {
+export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
   title = 'Prompt-to-Agent Orchestrator';
   prompt: string = '';
   isLoading: boolean = false;
+  isDarkTheme: boolean = true;
   
-  // Real-time states
   streamedAnswer: string = '';
   logs: ThoughtLog[] = [];
   filePreviews: string[] = [];
   error: string | null = null;
   
-  // Approval states
   isWaitingForApproval: boolean = false;
   pendingApproval: { tool: string; args: any; id: string } | null = null;
 
   private socket: WebSocket | null = null;
   private sanitizer = inject(DomSanitizer);
+  private el = inject(ElementRef);
+
+  ngOnInit() {
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+      this.isDarkTheme = saved === 'dark';
+    } else {
+      this.isDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    this.applyTheme();
+  }
+
+  ngAfterViewInit() {
+    const checkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    const clipboardSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    
+    this.el.nativeElement.addEventListener('click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      const btn = target.closest('.copy-btn') as HTMLButtonElement;
+      if (btn) {
+        e.stopPropagation();
+        const code = btn.getAttribute('data-code');
+        if (code) {
+          navigator.clipboard.writeText(code).then(() => {
+            btn.innerHTML = checkSvg;
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.innerHTML = clipboardSvg;
+              btn.classList.remove('copied');
+            }, 2000);
+          });
+        }
+      }
+    });
+  }
+
+  toggleTheme() {
+    this.isDarkTheme = !this.isDarkTheme;
+    localStorage.setItem('theme', this.isDarkTheme ? 'dark' : 'light');
+    this.applyTheme();
+  }
+
+  private applyTheme() {
+    document.documentElement.setAttribute('data-theme', this.isDarkTheme ? 'dark' : 'light');
+  }
+
+  handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.executePrompt();
+    }
+  }
 
   executePrompt() {
     if (!this.prompt.trim()) return;
@@ -44,11 +95,9 @@ export class AppComponent implements OnDestroy {
     this.isWaitingForApproval = false;
     this.pendingApproval = null;
 
-    // Determine WebSocket protocol based on page protocol
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws`;
     
-    // Connect to WebSocket endpoint
     this.socket = new WebSocket(wsUrl);
 
     this.socket.onopen = () => {
@@ -60,28 +109,29 @@ export class AppComponent implements OnDestroy {
 
       switch (data.type) {
         case 'token':
-          // Append tokens in real-time
           this.streamedAnswer += data.content;
           break;
 
         case 'status':
-          // Log intermediate thought/tool processes
           this.logs.push({ type: 'status', content: data.content });
           break;
 
         case 'file_preview':
-          // Store file preview for rendering
           this.filePreviews.push(data.content);
           break;
 
         case 'approval_required':
-          // Trigger the Approval Banner
           this.isWaitingForApproval = true;
           this.pendingApproval = {
             tool: data.tool,
             args: data.args,
             id: data.id
           };
+          this.isLoading = false;
+          break;
+
+        case 'error':
+          this.error = data.content;
           this.isLoading = false;
           break;
 
@@ -106,13 +156,11 @@ export class AppComponent implements OnDestroy {
   submitApproval(approved: boolean) {
     if (!this.socket || !this.pendingApproval) return;
 
-    // Send decision back to server
     this.socket.send(JSON.stringify({
       approved: approved,
       tool_call_id: this.pendingApproval.id
     }));
 
-    // Reset states and continue loading
     this.isWaitingForApproval = false;
     this.pendingApproval = null;
     this.isLoading = true;
@@ -125,23 +173,76 @@ export class AppComponent implements OnDestroy {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
     
-    // Handle code blocks with language
-    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+    const clipboardSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    const checkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    
+    const codeBlocks: string[] = [];
+    html = html.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const idx = codeBlocks.length;
       const language = lang || 'text';
-      return `<div class="code-block"><div class="code-header">${language}</div><pre><code>${code.trimEnd()}</code></pre></div>`;
+      const cleanCode = code.trimEnd();
+      const encoded = cleanCode.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      codeBlocks.push(`<div class="code-block"><div class="code-header"><span class="lang-label">${language}</span><button class="copy-btn" data-code="${encoded}" title="Copy code">${clipboardSvg}</button></div><pre><code>${cleanCode}</code></pre></div>`);
+      return `%%CODEBLOCK_${idx}%%`;
     });
     
-    // Handle inline code
-    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    html = html.replace(/^---+\s*$/gm, '<hr>');
     
-    // Handle bold text
+    html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+    
+    const lines = html.split('\n');
+    const result: string[] = [];
+    let inList: string | null = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      const ulMatch = line.match(/^\s*[-*] (.+)$/);
+      const olMatch = line.match(/^\s*\d+\. (.+)$/);
+      
+      if (ulMatch) {
+        if (inList !== 'ul') {
+          if (inList) result.push(`</${inList}>`);
+          result.push('<ul>');
+          inList = 'ul';
+        }
+        result.push(`<li>${ulMatch[1]}</li>`);
+      } else if (olMatch) {
+        if (inList !== 'ol') {
+          if (inList) result.push(`</${inList}>`);
+          result.push('<ol>');
+          inList = 'ol';
+        }
+        result.push(`<li>${olMatch[1]}</li>`);
+      } else {
+        if (inList) {
+          result.push(`</${inList}>`);
+          inList = null;
+        }
+        if (line.trim() === '' || line.startsWith('<h') || line.startsWith('<hr') || line.startsWith('<blockquote') || line.startsWith('%%CODEBLOCK')) {
+          result.push(line);
+        } else if (!line.startsWith('<')) {
+          result.push(`<p>${line}</p>`);
+        } else {
+          result.push(line);
+        }
+      }
+    }
+    if (inList) result.push(`</${inList}>`);
+    
+    html = result.join('\n');
+    
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Handle links
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
     html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="result-link">$1</a>');
     
-    // Handle line breaks (but not inside code blocks)
-    html = html.replace(/\n/g, '<br>');
+    html = html.replace(/%%CODEBLOCK_(\d+)%%/g, (match, idx) => codeBlocks[parseInt(idx)]);
     
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
