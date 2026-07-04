@@ -50,12 +50,20 @@
     </div>
 
     <!-- Live Execution Results -->
-    <div *ngIf="streamedAnswer || logs.length > 0" class="results-section">
+    <div *ngIf="streamedAnswer || logs.length > 0 || filePreviews.length > 0" class="results-section">
       
       <!-- Live Answer Stream -->
       <div *ngIf="streamedAnswer" class="glass-card final-result">
         <h2>✨ Agent Response</h2>
         <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
+      </div>
+
+      <!-- File Previews -->
+      <div *ngIf="filePreviews.length > 0" class="glass-card file-preview-section">
+        <h2>📁 Generated Files</h2>
+        <div *ngFor="let preview of filePreviews" class="file-preview-item">
+          <div class="markdown-body" [innerHTML]="parseMarkdown(preview)"></div>
+        </div>
       </div>
 
       <!-- Live Stream Logs -->

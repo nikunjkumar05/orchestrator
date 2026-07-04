@@ -23,6 +23,7 @@ export class AppComponent implements OnDestroy {
   // Real-time states
   streamedAnswer: string = '';
   logs: ThoughtLog[] = [];
+  filePreviews: string[] = [];
   error: string | null = null;
   
   // Approval states
@@ -38,6 +39,7 @@ export class AppComponent implements OnDestroy {
     this.isLoading = true;
     this.streamedAnswer = '';
     this.logs = [];
+    this.filePreviews = [];
     this.error = null;
     this.isWaitingForApproval = false;
     this.pendingApproval = null;
@@ -65,6 +67,11 @@ export class AppComponent implements OnDestroy {
         case 'status':
           // Log intermediate thought/tool processes
           this.logs.push({ type: 'status', content: data.content });
+          break;
+
+        case 'file_preview':
+          // Store file preview for rendering
+          this.filePreviews.push(data.content);
           break;
 
         case 'approval_required':
@@ -117,9 +124,25 @@ export class AppComponent implements OnDestroy {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
+    
+    // Handle code blocks with language
+    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      const language = lang || 'text';
+      return `<div class="code-block"><div class="code-header">${language}</div><pre><code>${code.trimEnd()}</code></pre></div>`;
+    });
+    
+    // Handle inline code
+    html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+    
+    // Handle bold text
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Handle links
     html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="result-link">$1</a>');
+    
+    // Handle line breaks (but not inside code blocks)
     html = html.replace(/\n/g, '<br>');
+    
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 

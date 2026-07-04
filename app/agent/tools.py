@@ -69,13 +69,80 @@ def e2b_sandbox_tool(code: str) -> str:
         return f"Sandbox execution failed: {str(e)}"
 
 # 3. File I/O Tools
-workspace_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "workspace")
+workspace_dir = os.getenv("WORKSPACE_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "workspace"))
 os.makedirs(workspace_dir, exist_ok=True)
-file_toolkit = FileManagementToolkit(
-    root_dir=workspace_dir,
-    selected_tools=["read_file", "write_file", "list_directory"],
-)
-file_tools = file_toolkit.get_tools()
+
+@tool
+def write_file_tool(file_path: str, text: str) -> str:
+    """Write text content to a file in the workspace and return a markdown preview.
+    Args:
+        file_path: The relative path to the file (e.g., 'script.py', 'data/file.txt').
+        text: The content to write to the file.
+    Returns:
+        A markdown-formatted preview of the written file with line numbers.
+    """
+    try:
+        full_path = os.path.join(workspace_dir, file_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        
+        lines = text.split('\n')
+        line_count = len(lines)
+        ext = os.path.splitext(file_path)[1].lstrip('.')
+        lang = ext if ext else 'text'
+        
+        numbered_lines = '\n'.join(f'{i+1:>4}  {line}' for i, line in enumerate(lines))
+        
+        preview = f"""**File created:** `{file_path}` ({line_count} lines)
+
+```{lang}
+{numbered_lines}
+```"""
+        return preview
+    except Exception as e:
+        return f"Error writing file: {str(e)}"
+
+@tool
+def read_file_tool(file_path: str) -> str:
+    """Read the contents of a file from the workspace.
+    Args:
+        file_path: The relative path to the file.
+    Returns:
+        The file contents.
+    """
+    try:
+        full_path = os.path.join(workspace_dir, file_path)
+        with open(full_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+@tool
+def list_directory_tool(directory_path: str = ".") -> str:
+    """List files and directories in the specified workspace directory.
+    Args:
+        directory_path: The relative directory path (default: root workspace).
+    Returns:
+        A listing of directory contents.
+    """
+    try:
+        full_path = os.path.join(workspace_dir, directory_path)
+        entries = []
+        for entry in sorted(os.listdir(full_path)):
+            full_entry = os.path.join(full_path, entry)
+            if os.path.isdir(full_entry):
+                entries.append(f"  {entry}/")
+            else:
+                size = os.path.getsize(full_entry)
+                entries.append(f"  {entry} ({size} bytes)")
+        if not entries:
+            return f"Directory '{directory_path}' is empty."
+        return f"Contents of {directory_path}:\n" + "\n".join(entries)
+    except Exception as e:
+        return f"Error listing directory: {str(e)}"
+
+file_tools = [write_file_tool, read_file_tool, list_directory_tool]
 
 # 4. RAG / Vector Database Tools (ChromaDB) — lazy-initialized
 _vector_store = None

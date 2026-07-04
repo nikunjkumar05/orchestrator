@@ -17,7 +17,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -27,9 +26,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def stream_astream_results(websocket: WebSocket, config: dict, inputs=None, silent=False):
+    """Run the agent with astream (HITL-safe) and stream results back.
+    If silent=True, skip streaming agent token responses (used after HITL resume).
+    Returns True if a HITL interrupt was hit, False if execution completed."""
+    async for event in agent_executor.astream(inputs, config=config):
+        for node_name, node_output in event.items():
+            if node_name == "agent" and isinstance(node_output, dict):
+                messages = node_output.get("messages", [])
+                for msg in messages:
+                    if isinstance(msg, AIMessage):
+                        if not silent and msg.content:
+                            await websocket.send_json({"type": "token", "content": msg.content})
+                        if msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "content": f"Preparing to run tool: {tc['name']}..."
+                                })
+            elif node_name == "tools" and isinstance(node_output, dict):
+                messages = node_output.get("messages", [])
+                for msg in messages:
+                    if isinstance(msg, ToolMessage):
+                        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                        if "**File created:**" in content or "```" in content:
+                            await websocket.send_json({"type": "file_preview", "content": content})
+            elif node_name == "__interrupt__":
+                return True
+    return False
+
 @app.post("/api/v1/execute", response_model=AgentResponse)
 async def execute_prompt(request: PromptRequest):
-    # Backward compatibility endpoint
     try:
         if not request.prompt.strip():
             raise HTTPException(status_code=400, detail="Prompt cannot be empty")
@@ -52,13 +79,11 @@ async def execute_prompt(request: PromptRequest):
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
-    # Generate unique thread ID for the WebSocket session
-    thread_id = str(id(websocket))
+    thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
     
     try:
         while True:
-            # Receive prompt payload
             data = await websocket.receive_text()
             try:
                 message_data = json.loads(data)
@@ -66,39 +91,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "content": "Invalid JSON"})
                 continue
             
-            if "prompt" in message_data:
-                prompt = message_data["prompt"]
-                inputs = {"messages": [("user", prompt)]}
+            if "prompt" not in message_data:
+                continue
                 
-                # Stream the LangGraph execution events asynchronously
-                async for event in agent_executor.astream_events(inputs, config=config, version="v2"):
-                    kind = event["event"]
-                    
-                    # 1. Stream token generation in real-time
-                    if kind == "on_chat_model_stream":
-                        content = event["data"]["chunk"].content
-                        if content:
-                            await websocket.send_json({
-                                "type": "token",
-                                "content": content
-                            })
-                            
-                    # 2. Stream tool call notifications
-                    elif kind == "on_tool_start":
-                        tool_name = event["name"]
-                        await websocket.send_json({
-                            "type": "status",
-                            "content": f"Preparing to run tool: {tool_name}..."
-                        })
-
-                # Check if graph paused due to Human-in-the-Loop interrupt
+            prompt = message_data["prompt"]
+            inputs = {"messages": [("user", prompt)]}
+            
+            interrupted = await stream_astream_results(websocket, config, inputs)
+            
+            if interrupted:
                 state = await agent_executor.aget_state(config)
                 while state.next:
                     last_message = state.values["messages"][-1]
                     if isinstance(last_message, AIMessage) and last_message.tool_calls:
                         tool_call = last_message.tool_calls[0]
                         
-                        # Send approval request to frontend
                         await websocket.send_json({
                             "type": "approval_required",
                             "tool": tool_call["name"],
@@ -106,7 +113,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             "id": tool_call["id"]
                         })
                         
-                        # Halt execution and wait for user's approval response
                         raw_approval = await websocket.receive_text()
                         try:
                             approval_data = json.loads(raw_approval)
@@ -119,38 +125,30 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "type": "status",
                                 "content": "Access granted. Running tool..."
                             })
-                            # Resume execution with approval
-                            async for event in agent_executor.astream_events(None, config=config, version="v2"):
-                                if event["event"] == "on_chat_model_stream":
-                                    content = event["data"]["chunk"].content
-                                    if content:
-                                        await websocket.send_json({"type": "token", "content": content})
-                                elif event["event"] == "on_tool_start":
-                                    await websocket.send_json({"type": "status", "content": f"Executing: {event['name']}..."})
+                            await stream_astream_results(websocket, config, silent=True)
+                            await websocket.send_json({
+                                "type": "status",
+                                "content": f"Tool '{tool_call['name']}' completed successfully."
+                            })
                         else:
                             await websocket.send_json({
                                 "type": "status",
                                 "content": "Access denied. Notifying the agent..."
                             })
-                            # Inject rejection context directly into graph state
                             rejection = ToolMessage(
                                 content="Error: Execution denied by user.",
                                 tool_call_id=tool_call["id"]
                             )
                             await agent_executor.aupdate_state(config, {"messages": [rejection]}, as_node="tools")
-                            
-                            # Resume execution with the rejection state loaded
-                            async for event in agent_executor.astream_events(None, config=config, version="v2"):
-                                if event["event"] == "on_chat_model_stream":
-                                    content = event["data"]["chunk"].content
-                                    if content:
-                                        await websocket.send_json({"type": "token", "content": content})
+                            await stream_astream_results(websocket, config, silent=True)
+                            await websocket.send_json({
+                                "type": "status",
+                                "content": "Tool denied. Agent notified."
+                            })
                     
-                    # Re-check the state
                     state = await agent_executor.aget_state(config)
 
-                # Send completion signal
-                await websocket.send_json({"type": "done"})
+            await websocket.send_json({"type": "done"})
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected.")
@@ -165,7 +163,6 @@ async def websocket_endpoint(websocket: WebSocket):
 async def health_check():
     return {"status": "healthy"}
 
-# Mount compiled static frontend files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
