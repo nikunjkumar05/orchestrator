@@ -3,10 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import json
-import asyncio
+import uuid
+import logging
 from app.models import PromptRequest, AgentResponse
 from app.agent.graph import agent_executor
 from langchain_core.messages import AIMessage, ToolMessage
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Prompt-to-Agent Orchestrator",
@@ -15,9 +18,10 @@ app = FastAPI(
 )
 
 # CORS configuration
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,7 +34,7 @@ async def execute_prompt(request: PromptRequest):
         if not request.prompt.strip():
             raise HTTPException(status_code=400, detail="Prompt cannot be empty")
         
-        config = {"configurable": {"thread_id": "legacy_thread"}}
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         inputs = {"messages": [("user", request.prompt)]}
         
         result = await agent_executor.ainvoke(inputs, config=config)
@@ -41,7 +45,8 @@ async def execute_prompt(request: PromptRequest):
             messages=[msg.model_dump() for msg in result["messages"]]
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Agent execution failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal agent error")
 
 @app.websocket("/api/v1/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -55,7 +60,11 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Receive prompt payload
             data = await websocket.receive_text()
-            message_data = json.loads(data)
+            try:
+                message_data = json.loads(data)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "content": "Invalid JSON"})
+                continue
             
             if "prompt" in message_data:
                 prompt = message_data["prompt"]
@@ -99,7 +108,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                         # Halt execution and wait for user's approval response
                         raw_approval = await websocket.receive_text()
-                        approval_data = json.loads(raw_approval)
+                        try:
+                            approval_data = json.loads(raw_approval)
+                        except json.JSONDecodeError:
+                            await websocket.send_json({"type": "error", "content": "Invalid approval payload"})
+                            continue
                         
                         if approval_data.get("approved") is True:
                             await websocket.send_json({
@@ -140,9 +153,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "done"})
 
     except WebSocketDisconnect:
-        print("WebSocket client disconnected.")
+        logger.info("WebSocket client disconnected.")
     except Exception as e:
-        print(f"Error: {e}")
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "content": "Agent error occurred"})
+        except Exception:
+            pass
 
 @app.get("/health")
 async def health_check():

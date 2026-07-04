@@ -32,7 +32,7 @@ RUN mkdir -p /app/app/static
 COPY --from=build-frontend /app/dist/frontend/browser/ /app/app/static/
 
 # Create a workspace directory with appropriate permissions
-RUN mkdir -p /app/workspace && chmod 777 /app/workspace
+RUN mkdir -p /app/workspace && chmod 755 /app/workspace
 
 # Expose the FastAPI port
 EXPOSE 8000
