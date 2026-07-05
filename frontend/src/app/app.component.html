@@ -1,87 +1,134 @@
 <div class="app-container">
-  <header class="app-header">
-    <div class="header-content">
-      <h1>Orchestrator Agent</h1>
-      <p>Powered by Mistral AI, LangGraph, & FastAPI</p>
+  <!-- Sidebar -->
+  <div class="sidebar-overlay" *ngIf="showSidebar" (click)="showSidebar = false"></div>
+  <aside class="sidebar" [class.open]="showSidebar">
+    <div class="sidebar-header">
+      <button class="sidebar-close" (click)="showSidebar = false">&times;</button>
+      <button class="new-thread-btn" (click)="newThread()">+ New chat</button>
     </div>
-    <button class="theme-toggle" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
-      <span *ngIf="isDarkTheme">&#9790;</span>
-      <span *ngIf="!isDarkTheme">&#9728;</span>
-    </button>
-  </header>
-
-  <main class="main-content">
-    
-    <!-- Input Section -->
-    <div class="glass-card input-section">
-      <div class="input-wrapper">
-        <textarea 
-          [(ngModel)]="prompt" 
-          placeholder="Ask the agent to do something (e.g., 'Write a Python script to plot a graph')"
-          (keydown)="handleKeydown($event)"
-          [disabled]="isLoading || isWaitingForApproval">
-        </textarea>
-        <button class="primary-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim() || isWaitingForApproval">
-          <span *ngIf="!isLoading">Execute</span>
-          <div *ngIf="isLoading" class="spinner"></div>
-        </button>
-      </div>
-      <div class="input-hint">Press Enter to send, Shift+Enter for new line</div>
-    </div>
-
-    <!-- Error State -->
-    <div *ngIf="error" class="error-banner glass-card">
-      {{ error }}
-    </div>
-
-    <!-- Human-in-the-Loop Intercept Card -->
-    <div *ngIf="isWaitingForApproval && pendingApproval" class="approval-card glass-card">
-      <div class="approval-header">
-        <span class="warning-icon">&#128737;</span>
-        <h3>Permission Required</h3>
-      </div>
-      <p>The agent is requesting access to execute a tool:</p>
-      
-      <div class="tool-details">
-        <div><strong>Tool Name:</strong> <code>{{ pendingApproval.tool }}</code></div>
-        <div><strong>Arguments:</strong></div>
-        <pre><code>{{ formatArgs(pendingApproval.args) }}</code></pre>
-      </div>
-
-      <div class="approval-actions">
-        <button class="approve-btn" (click)="submitApproval(true)">Approve</button>
-        <button class="deny-btn" (click)="submitApproval(false)">Deny</button>
+    <div class="thread-list" *ngIf="threads.length > 0">
+      <div *ngFor="let t of threads"
+           class="thread-item"
+           [class.active]="threadId === t.thread_id"
+           (click)="loadThread(t.thread_id)">
+        <span class="thread-item-text">{{ t.name }}</span>
       </div>
     </div>
+    <div class="thread-list empty" *ngIf="threads.length === 0">
+      <p>No conversations yet.</p>
+    </div>
+  </aside>
 
-    <!-- Live Execution Results -->
-    <div *ngIf="streamedAnswer || logs.length > 0 || filePreviews.length > 0" class="results-section">
-      
-      <!-- Live Answer Stream -->
-      <div *ngIf="streamedAnswer" class="glass-card final-result">
-        <h2>Agent Response</h2>
-        <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
+  <!-- Main area -->
+  <div class="main-area">
+    <!-- Top bar -->
+    <div class="topbar">
+      <button class="sidebar-toggle" (click)="showSidebar = !showSidebar" title="Open sidebar">
+        &#9776;
+      </button>
+      <span class="topbar-title" *ngIf="threadId">Orchestrator</span>
+      <span class="topbar-title" *ngIf="!threadId">Orchestrator</span>
+      <button class="theme-toggle" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
+        <span *ngIf="isDarkTheme">&#9790;</span>
+        <span *ngIf="!isDarkTheme">&#9728;</span>
+      </button>
+    </div>
+
+    <!-- Chat scroll area -->
+    <div class="chat-scroll" #chatScroll>
+
+      <!-- Empty state: centered input -->
+      <div class="empty-state" *ngIf="messages.length === 0 && !streamedAnswer && !isLoading && !error">
+        <h2>Orchestrator Agent</h2>
+        <p>Ask me to build, write, or analyze anything.</p>
       </div>
 
-      <!-- File Previews -->
-      <div *ngIf="filePreviews.length > 0" class="glass-card file-preview-section">
-        <h2>Generated Files</h2>
-        <div *ngFor="let preview of filePreviews" class="file-preview-item">
-          <div class="markdown-body" [innerHTML]="parseMarkdown(preview)"></div>
+      <!-- Error -->
+      <div *ngIf="error" class="error-banner glass-card">{{ error }}</div>
+
+      <!-- HITL Approval -->
+      <div *ngIf="isWaitingForApproval && pendingApproval" class="approval-card glass-card">
+        <div class="approval-header">
+          <span class="warning-icon">&#128737;</span>
+          <h3>Permission Required</h3>
+        </div>
+        <p>The agent wants to run a tool:</p>
+        <div class="tool-details">
+          <div><strong>Tool:</strong> <code>{{ pendingApproval.tool }}</code></div>
+          <div><strong>Args:</strong></div>
+          <pre><code>{{ formatArgs(pendingApproval.args) }}</code></pre>
+        </div>
+        <div class="approval-actions">
+          <button class="approve-btn" (click)="submitApproval(true)">Approve</button>
+          <button class="deny-btn" (click)="submitApproval(false)">Deny</button>
         </div>
       </div>
 
-      <!-- Live Stream Logs -->
-      <div *ngIf="logs.length > 0" class="glass-card thought-process">
-        <h3>Agent Activity Log</h3>
-        <ul class="message-list">
-          <li *ngFor="let log of logs" class="log-item">
-            <div class="msg-content">{{ log.content }}</div>
-          </li>
-        </ul>
+      <!-- Chat messages -->
+      <div *ngIf="messages.length > 0" class="messages-container">
+        <div *ngFor="let msg of messages" class="message-row" [ngClass]="msg.role">
+          <div class="message-avatar">{{ msg.role === 'user' ? '&#128100;' : '&#129302;' }}</div>
+          <div class="message-body">
+            <div class="markdown-body" [innerHTML]="parseMarkdown(msg.content)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live streaming response -->
+      <div *ngIf="streamedAnswer" class="messages-container">
+        <div class="message-row assistant">
+          <div class="message-avatar">&#129302;</div>
+          <div class="message-body">
+            <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading indicator -->
+      <div *ngIf="isLoading && !streamedAnswer && !isWaitingForApproval" class="messages-container">
+        <div class="message-row assistant">
+          <div class="message-avatar">&#129302;</div>
+          <div class="message-body">
+            <div class="typing-indicator"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Previews -->
+      <div *ngIf="filePreviews.length > 0" class="messages-container">
+        <div *ngFor="let preview of filePreviews" class="message-row assistant">
+          <div class="message-avatar">&#129302;</div>
+          <div class="message-body">
+            <div class="markdown-body" [innerHTML]="parseMarkdown(preview)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity log -->
+      <div *ngIf="logs.length > 0" class="logs-container">
+        <div *ngFor="let log of logs" class="log-line">{{ log.content }}</div>
       </div>
 
     </div>
 
-  </main>
+    <!-- Input pinned to bottom -->
+    <div class="input-area">
+      <div class="input-box">
+        <textarea
+          #chatInput
+          [(ngModel)]="prompt"
+          placeholder="Message Orchestrator..."
+          (keydown)="handleKeydown($event)"
+          [disabled]="isLoading || isWaitingForApproval"
+          rows="1"
+          (input)="autoResize(chatInput)">
+        </textarea>
+        <button class="send-btn" (click)="executePrompt()" [disabled]="isLoading || !prompt.trim() || isWaitingForApproval">
+          <span *ngIf="!isLoading">&#10148;</span>
+          <div *ngIf="isLoading" class="spinner"></div>
+        </button>
+      </div>
+      <div class="input-disclaimer">Orchestrator can make mistakes. Check important info.</div>
+    </div>
+  </div>
 </div>

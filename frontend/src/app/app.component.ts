@@ -8,6 +8,18 @@ interface ThoughtLog {
   content: string;
 }
 
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ThreadInfo {
+  thread_id: string;
+  name: string;
+  created_at: string;
+  preview: string;
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -24,10 +36,15 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
   streamedAnswer: string = '';
   logs: ThoughtLog[] = [];
   filePreviews: string[] = [];
+  messages: ChatMessage[] = [];
   error: string | null = null;
   
   isWaitingForApproval: boolean = false;
   pendingApproval: { tool: string; args: any; id: string } | null = null;
+
+  threadId: string | null = null;
+  threads: ThreadInfo[] = [];
+  showSidebar: boolean = false;
 
   private socket: WebSocket | null = null;
   private sanitizer = inject(DomSanitizer);
@@ -41,6 +58,7 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
       this.isDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     this.applyTheme();
+    this.fetchThreads();
   }
 
   ngAfterViewInit() {
@@ -84,9 +102,68 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
     }
   }
 
+  autoResize(textarea: HTMLTextAreaElement) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+  }
+
+  async fetchThreads() {
+    try {
+      const res = await fetch('/api/v1/threads');
+      if (res.ok) {
+        this.threads = await res.json();
+      }
+    } catch (e) {
+      console.error('Failed to fetch threads:', e);
+    }
+  }
+
+  loadThread(threadId: string) {
+    this.threadId = threadId;
+    this.streamedAnswer = '';
+    this.logs = [];
+    this.filePreviews = [];
+    this.messages = [];
+    this.error = null;
+    this.isWaitingForApproval = false;
+    this.pendingApproval = null;
+    this.showSidebar = false;
+
+    this.fetchThreadHistory(threadId);
+  }
+
+  private async fetchThreadHistory(threadId: string) {
+    try {
+      const res = await fetch(`/api/v1/threads/${threadId}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        this.messages = (data.messages || [])
+          .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+          .map((m: any) => ({ role: m.role, content: m.content }));
+      }
+    } catch (e) {
+      console.error('Failed to load thread history:', e);
+    }
+  }
+
+  newThread() {
+    this.threadId = null;
+    this.streamedAnswer = '';
+    this.logs = [];
+    this.filePreviews = [];
+    this.messages = [];
+    this.error = null;
+    this.isWaitingForApproval = false;
+    this.pendingApproval = null;
+    this.showSidebar = false;
+  }
+
   executePrompt() {
     if (!this.prompt.trim()) return;
 
+    const userPrompt = this.prompt;
+    this.prompt = '';
+    this.messages.push({ role: 'user', content: userPrompt });
     this.isLoading = true;
     this.streamedAnswer = '';
     this.logs = [];
@@ -101,13 +178,22 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
     this.socket = new WebSocket(wsUrl);
 
     this.socket.onopen = () => {
-      this.socket?.send(JSON.stringify({ prompt: this.prompt }));
+      const payload: any = { prompt: userPrompt };
+      if (this.threadId) {
+        payload.thread_id = this.threadId;
+      }
+      this.socket?.send(JSON.stringify(payload));
     };
 
     this.socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
       switch (data.type) {
+        case 'thread_id':
+          this.threadId = data.thread_id;
+          this.fetchThreads();
+          break;
+
         case 'token':
           this.streamedAnswer += data.content;
           break;
@@ -136,7 +222,12 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
           break;
 
         case 'done':
+          if (this.streamedAnswer) {
+            this.messages.push({ role: 'assistant', content: this.streamedAnswer });
+          }
+          this.streamedAnswer = '';
           this.isLoading = false;
+          this.fetchThreads();
           this.socket?.close();
           break;
       }
@@ -249,6 +340,29 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
 
   formatArgs(args: any): string {
     return JSON.stringify(args, null, 2);
+  }
+
+  formatThreadDate(dateStr: string): string {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      if (isToday) {
+        return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      }
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+             d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  }
+
+  copyThreadId() {
+    if (this.threadId) {
+      navigator.clipboard.writeText(this.threadId);
+    }
   }
 
   ngOnDestroy() {
