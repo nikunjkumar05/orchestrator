@@ -83,9 +83,6 @@
       <!-- Chat messages -->
       <div *ngIf="messages.length > 0" class="messages-container">
         <div *ngFor="let msg of messages" class="message-row" [ngClass]="msg.role">
-          <div class="message-avatar" *ngIf="msg.role === 'user'">&#128100;</div>
-          <div class="message-avatar" *ngIf="msg.role === 'assistant'">&#129302;</div>
-          <div class="message-avatar tool-avatar" *ngIf="msg.role === 'tool'">&#128295;</div>
           <div class="message-body">
             <div *ngIf="msg.role === 'tool'" class="tool-output">
               <div class="tool-output-header">Tool Output</div>
@@ -99,7 +96,6 @@
       <!-- Live streaming response -->
       <div *ngIf="streamedAnswer" class="messages-container">
         <div class="message-row assistant">
-          <div class="message-avatar">&#129302;</div>
           <div class="message-body">
             <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
           </div>
@@ -127,7 +123,6 @@
       <!-- Loading indicator -->
       <div *ngIf="isLoading && !streamedAnswer && !isWaitingForApproval" class="messages-container">
         <div class="message-row assistant">
-          <div class="message-avatar">&#129302;</div>
           <div class="message-body">
             <div class="typing-indicator"><span></span><span></span><span></span></div>
           </div>
@@ -137,7 +132,6 @@
       <!-- File Previews -->
       <div *ngIf="filePreviews.length > 0" class="messages-container">
         <div *ngFor="let preview of filePreviews" class="message-row assistant">
-          <div class="message-avatar">&#129302;</div>
           <div class="message-body">
             <div class="markdown-body" [innerHTML]="parseMarkdown(preview)"></div>
           </div>
