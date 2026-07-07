@@ -247,3 +247,66 @@ body {
 .markdown-body a.result-link:hover {
   text-decoration: underline;
 }
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-body th {
+  background: var(--code-header-bg);
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.markdown-body td {
+  color: var(--text-main);
+}
+
+.markdown-body tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body tbody tr:hover {
+  background: var(--code-header-bg);
+}
+
+/* Tool Output */
+.tool-output {
+  background: var(--code-header-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.25rem 0;
+  font-size: 0.88rem;
+}
+
+.tool-output-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.tool-avatar {
+  filter: hue-rotate(130deg);
+}

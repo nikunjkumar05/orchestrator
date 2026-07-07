@@ -97,9 +97,7 @@
   transition: background 0.15s;
   font-size: 0.85rem;
   color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  position: relative;
 }
 
 .thread-item:hover {
@@ -110,9 +108,121 @@
   background: var(--accent-bg);
 }
 
+.thread-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .thread-item-text {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Three-dot menu button */
+.thread-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.thread-menu-btn:hover {
+  background: var(--border-subtle);
+  color: var(--text-main);
+}
+
+.thread-item:hover .thread-menu-btn {
+  display: flex;
+}
+
+/* Dropdown menu */
+.thread-dropdown {
+  position: absolute;
+  right: 12px;
+  margin-top: 0.25rem;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.35rem;
+  min-width: 160px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  z-index: 200;
+  animation: dropIn 0.12s ease-out;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.12s;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: var(--border-subtle);
+}
+
+.dropdown-item svg {
+  flex-shrink: 0;
+}
+
+.dropdown-item.delete {
+  color: var(--error);
+}
+
+.dropdown-item.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Inline edit */
+.thread-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.thread-edit-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.thread-edit-actions {
+  display: flex;
+  gap: 0.2rem;
+  flex-shrink: 0;
 }
 
 /* ===== Main Area ===== */
@@ -158,6 +268,13 @@
   color: var(--text-main);
 }
 
+.topbar-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .theme-toggle {
   background: none;
   border: 1px solid var(--border);
@@ -193,8 +310,16 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
   color: var(--text-muted);
+}
+
+.empty-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 18px;
+  object-fit: cover;
+  margin-bottom: 0.25rem;
 }
 
 .empty-state h2 {
@@ -291,6 +416,25 @@
   flex-shrink: 0;
   padding: 0 1rem 1rem;
   background: linear-gradient(transparent, var(--bg-main) 30%);
+}
+
+/* Token Stats */
+.token-stats {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0.4rem 0 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.token-sep {
+  opacity: 0.4;
 }
 
 .input-box {

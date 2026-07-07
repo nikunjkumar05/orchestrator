@@ -10,8 +10,41 @@
       <div *ngFor="let t of threads"
            class="thread-item"
            [class.active]="threadId === t.thread_id"
+           [class.editing]="editingThreadId === t.thread_id"
            (click)="loadThread(t.thread_id)">
-        <span class="thread-item-text">{{ t.name }}</span>
+
+        <!-- Normal view -->
+        <div class="thread-item-row" *ngIf="editingThreadId !== t.thread_id">
+          <span class="thread-item-text">{{ t.name }}</span>
+          <button class="thread-menu-btn" (click)="toggleThreadMenu(t.thread_id, $event)" title="More">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+          </button>
+        </div>
+
+        <!-- Thread dropdown menu -->
+        <div class="thread-dropdown" *ngIf="openMenuThreadId === t.thread_id" (click)="$event.stopPropagation()">
+          <button class="dropdown-item" (click)="startRename(t); openMenuThreadId = null">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            <span>Rename</span>
+          </button>
+          <button class="dropdown-item delete" (click)="deleteThread(t.thread_id, $event); openMenuThreadId = null">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            <span>Delete</span>
+          </button>
+        </div>
+
+        <!-- Edit view -->
+        <div class="thread-edit-row" *ngIf="editingThreadId === t.thread_id" (click)="$event.stopPropagation()">
+          <input class="thread-edit-input" [(ngModel)]="editingName" (keydown.enter)="saveRename()" (keydown.escape)="cancelRename()" autofocus />
+          <div class="thread-edit-actions">
+            <button class="thread-action-btn save" (click)="saveRename()" title="Save">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <button class="thread-action-btn" (click)="cancelRename()" title="Cancel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="thread-list empty" *ngIf="threads.length === 0">
@@ -26,8 +59,8 @@
       <button class="sidebar-toggle" (click)="showSidebar = !showSidebar" title="Open sidebar">
         &#9776;
       </button>
-      <span class="topbar-title" *ngIf="threadId">Orchestrator</span>
-      <span class="topbar-title" *ngIf="!threadId">Orchestrator</span>
+      <img src="logo.png" alt="Orchestrator" class="topbar-logo" />
+      <span class="topbar-title">Orchestrator</span>
       <button class="theme-toggle" (click)="toggleTheme()" [title]="isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'">
         <span *ngIf="isDarkTheme">&#9790;</span>
         <span *ngIf="!isDarkTheme">&#9728;</span>
@@ -39,6 +72,7 @@
 
       <!-- Empty state: centered input -->
       <div class="empty-state" *ngIf="messages.length === 0 && !streamedAnswer && !isLoading && !error">
+        <img src="logo.png" alt="Orchestrator" class="empty-logo" />
         <h2>Orchestrator Agent</h2>
         <p>Ask me to build, write, or analyze anything.</p>
       </div>
@@ -46,7 +80,33 @@
       <!-- Error -->
       <div *ngIf="error" class="error-banner glass-card">{{ error }}</div>
 
-      <!-- HITL Approval -->
+      <!-- Chat messages -->
+      <div *ngIf="messages.length > 0" class="messages-container">
+        <div *ngFor="let msg of messages" class="message-row" [ngClass]="msg.role">
+          <div class="message-avatar" *ngIf="msg.role === 'user'">&#128100;</div>
+          <div class="message-avatar" *ngIf="msg.role === 'assistant'">&#129302;</div>
+          <div class="message-avatar tool-avatar" *ngIf="msg.role === 'tool'">&#128295;</div>
+          <div class="message-body">
+            <div *ngIf="msg.role === 'tool'" class="tool-output">
+              <div class="tool-output-header">Tool Output</div>
+              <div class="markdown-body" [innerHTML]="parseMarkdown(msg.content)"></div>
+            </div>
+            <div *ngIf="msg.role !== 'tool'" class="markdown-body" [innerHTML]="parseMarkdown(msg.content)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live streaming response -->
+      <div *ngIf="streamedAnswer" class="messages-container">
+        <div class="message-row assistant">
+          <div class="message-avatar">&#129302;</div>
+          <div class="message-body">
+            <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HITL Approval — after messages so it appears at bottom -->
       <div *ngIf="isWaitingForApproval && pendingApproval" class="approval-card glass-card">
         <div class="approval-header">
           <span class="warning-icon">&#128737;</span>
@@ -61,26 +121,6 @@
         <div class="approval-actions">
           <button class="approve-btn" (click)="submitApproval(true)">Approve</button>
           <button class="deny-btn" (click)="submitApproval(false)">Deny</button>
-        </div>
-      </div>
-
-      <!-- Chat messages -->
-      <div *ngIf="messages.length > 0" class="messages-container">
-        <div *ngFor="let msg of messages" class="message-row" [ngClass]="msg.role">
-          <div class="message-avatar">{{ msg.role === 'user' ? '&#128100;' : '&#129302;' }}</div>
-          <div class="message-body">
-            <div class="markdown-body" [innerHTML]="parseMarkdown(msg.content)"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live streaming response -->
-      <div *ngIf="streamedAnswer" class="messages-container">
-        <div class="message-row assistant">
-          <div class="message-avatar">&#129302;</div>
-          <div class="message-body">
-            <div class="markdown-body" [innerHTML]="parseMarkdown(streamedAnswer)"></div>
-          </div>
         </div>
       </div>
 
@@ -109,6 +149,15 @@
         <div *ngFor="let log of logs" class="log-line">{{ log.content }}</div>
       </div>
 
+    </div>
+
+    <!-- Token stats -->
+    <div *ngIf="tokenStats" class="token-stats">
+      <span>{{ tokenStats.total_tokens }} tokens</span>
+      <span class="token-sep">&middot;</span>
+      <span>{{ tokenStats.prompt_tokens }} in / {{ tokenStats.completion_tokens }} out</span>
+      <span class="token-sep">&middot;</span>
+      <span>${{ tokenStats.estimated_cost.toFixed(4) }}</span>
     </div>
 
     <!-- Input pinned to bottom -->

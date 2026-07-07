@@ -8,6 +8,7 @@ import uuid
 import logging
 from datetime import datetime, timezone
 from app.models import PromptRequest, AgentResponse
+from pydantic import BaseModel
 from app.agent import graph
 from app.agent.graph import init_checkpointer, build_agent
 from langchain_core.messages import AIMessage, ToolMessage
@@ -37,6 +38,11 @@ async def startup():
     global agent_executor
     memory = await init_checkpointer()
     agent_executor = build_agent(memory)
+    # Create thread_names table for custom names
+    await graph.conn.execute(
+        "CREATE TABLE IF NOT EXISTS thread_names (thread_id TEXT PRIMARY KEY, name TEXT NOT NULL)"
+    )
+    await graph.conn.commit()
     logger.info("SQLite checkpointer initialized.")
 
 
@@ -85,6 +91,11 @@ async def list_threads():
         )
         rows = await cursor.fetchall()
 
+        # Fetch custom names
+        name_cursor = await graph.conn.execute("SELECT thread_id, name FROM thread_names")
+        name_rows = await name_cursor.fetchall()
+        custom_names = {r[0]: r[1] for r in name_rows}
+
         threads = []
         for row in rows:
             thread_id = row[0]
@@ -104,7 +115,8 @@ async def list_threads():
                 created_at = _extract_created_at(state)
             except Exception:
                 pass
-            name = _generate_thread_name(preview)
+            auto_name = _generate_thread_name(preview)
+            name = custom_names.get(thread_id, auto_name)
             threads.append({
                 "thread_id": thread_id,
                 "name": name,
@@ -116,6 +128,40 @@ async def list_threads():
     except Exception as e:
         logger.error(f"Failed to list threads: {e}")
         return []
+
+
+
+
+class RenameRequest(BaseModel):
+    name: str
+
+
+@app.put("/api/v1/threads/{thread_id}")
+async def rename_thread(thread_id: str, body: RenameRequest):
+    """Rename a thread."""
+    try:
+        await graph.conn.execute(
+            "INSERT OR REPLACE INTO thread_names (thread_id, name) VALUES (?, ?)",
+            (thread_id, body.name)
+        )
+        await graph.conn.commit()
+        return {"status": "renamed", "thread_id": thread_id, "name": body.name}
+    except Exception as e:
+        logger.error(f"Failed to rename thread: {e}")
+        raise HTTPException(status_code=500, detail="Failed to rename thread")
+
+
+@app.delete("/api/v1/threads/{thread_id}")
+async def delete_thread(thread_id: str):
+    """Delete a thread and all its checkpoints."""
+    try:
+        await graph.conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+        await graph.conn.execute("DELETE FROM thread_names WHERE thread_id = ?", (thread_id,))
+        await graph.conn.commit()
+        return {"status": "deleted", "thread_id": thread_id}
+    except Exception as e:
+        logger.error(f"Failed to delete thread: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete thread")
 
 
 @app.get("/api/v1/threads/{thread_id}/history")
@@ -151,32 +197,39 @@ async def get_thread_history(thread_id: str):
         raise HTTPException(status_code=404, detail="Thread not found")
 
 
-async def stream_astream_results(websocket: WebSocket, config: dict, inputs=None, silent=False):
-    async for event in agent_executor.astream(inputs, config=config):
+async def stream_astream_results(websocket: WebSocket, config: dict, inputs=None, silent=False, tracker=None):
+    from app.agent.callbacks import TokenTrackingCallback
+
+    if tracker is None:
+        tracker = TokenTrackingCallback()
+    cfg = {**config, "callbacks": [tracker]}
+
+    async for event in agent_executor.astream(inputs, config=cfg):
         for node_name, node_output in event.items():
             if node_name == "agent" and isinstance(node_output, dict):
                 messages = node_output.get("messages", [])
                 for msg in messages:
                     if isinstance(msg, AIMessage):
-                        if not silent and msg.content:
-                            await websocket.send_json({"type": "token", "content": msg.content})
                         if msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                await websocket.send_json({
-                                    "type": "status",
-                                    "content": f"Preparing to run tool: {tc['name']}..."
-                                })
+                            if not silent:
+                                for tc in msg.tool_calls:
+                                    await websocket.send_json({
+                                        "type": "status",
+                                        "content": f"Preparing to run tool: {tc['name']}..."
+                                    })
+                        elif msg.content:
+                            await websocket.send_json({"type": "token", "content": msg.content})
             elif node_name == "tools" and isinstance(node_output, dict):
                 messages = node_output.get("messages", [])
                 for msg in messages:
                     if isinstance(msg, ToolMessage):
                         content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                        if "**File created:**" in content or "```" in content:
-                            await websocket.send_json({"type": "file_preview", "content": content})
+                        if not silent:
+                            await websocket.send_json({"type": "tool_result", "content": content})
             elif node_name == "__interrupt__":
-                return True
-    return False
+                return True, tracker
 
+    return False, tracker
 
 @app.post("/api/v1/execute", response_model=AgentResponse)
 async def execute_prompt(request: PromptRequest):
@@ -230,7 +283,24 @@ async def websocket_endpoint(websocket: WebSocket):
             prompt = message_data["prompt"]
             inputs = {"messages": [("user", prompt)]}
 
-            interrupted = await stream_astream_results(websocket, config, inputs)
+            # Fix interrupted threads: inject synthetic ToolMessage for pending tool calls
+            try:
+                state = await agent_executor.aget_state(config)
+                if state.next:
+                    messages = state.values.get("messages", [])
+                    for msg in messages:
+                        if isinstance(msg, AIMessage) and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                rejection = ToolMessage(
+                                    content="Tool call interrupted by user. Previous tool call was not completed.",
+                                    tool_call_id=tc["id"]
+                                )
+                                await agent_executor.aupdate_state(config, {"messages": [rejection]}, as_node="tools")
+                            break
+            except Exception:
+                pass
+
+            interrupted, tracker = await stream_astream_results(websocket, config, inputs)
 
             if interrupted:
                 state = await agent_executor.aget_state(config)
@@ -258,7 +328,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "type": "status",
                                 "content": "Access granted. Running tool..."
                             })
-                            await stream_astream_results(websocket, config, silent=True)
+                            await stream_astream_results(websocket, config, silent=True, tracker=tracker)
                             await websocket.send_json({
                                 "type": "status",
                                 "content": f"Tool '{tool_call['name']}' completed successfully."
@@ -273,7 +343,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 tool_call_id=tool_call["id"]
                             )
                             await agent_executor.aupdate_state(config, {"messages": [rejection]}, as_node="tools")
-                            await stream_astream_results(websocket, config, silent=True)
+                            await stream_astream_results(websocket, config, silent=True, tracker=tracker)
                             await websocket.send_json({
                                 "type": "status",
                                 "content": "Tool denied. Agent notified."
@@ -281,6 +351,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     state = await agent_executor.aget_state(config)
 
+            await websocket.send_json({"type": "token_usage", **tracker.get_stats()})
             await websocket.send_json({"type": "done"})
 
     except WebSocketDisconnect:

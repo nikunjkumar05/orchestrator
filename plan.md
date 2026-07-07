@@ -5,7 +5,7 @@
 | Phase | Items | Status |
 |-------|-------|--------|
 | Phase 1 — UI Polish | 10/10 | ✅ COMPLETED |
-| Phase 2 — Production Hardening | 1/3 | 🔄 IN PROGRESS |
+| Phase 2 — Production Hardening | 2/3 | 🔄 IN PROGRESS |
 | Phase 3 — Advanced Features | 0/3 | 📋 PLANNED |
 | Phase 4 — Quality & DevOps | 0/4 | 📋 PLANNED |
 
@@ -41,12 +41,12 @@
 **Files:** `requirements.txt`, `app/agent/graph.py`, `app/main.py`
 
 ### 2.2 Token Cost Dashboard
-- [ ] Create `TokenTrackingCallback` (LangChain callback) in `app/agent/callbacks.py`
-- [ ] Capture `prompt_tokens`, `completion_tokens`, `total_tokens` per LLM call
-- [ ] Calculate cost using Mistral pricing (input: $0.27/1M, output: $0.81/1M)
+- [x] Create `TokenTrackingCallback` (LangChain callback) in `app/agent/callbacks.py`
+- [x] Capture `prompt_tokens`, `completion_tokens`, `total_tokens` per LLM call
+- [x] Calculate cost using Mistral pricing (input: $0.27/1M, output: $0.81/1M)
 - [ ] Store per-thread stats in SQLite
-- [ ] Send `token_usage` WebSocket message after each response
-- [ ] Add token stats display in frontend (footer badge or stats panel)
+- [x] Send `token_usage` WebSocket message after each response
+- [x] Add token stats display in frontend (footer badge or stats panel)
 - [ ] Add `GET /api/v1/stats/{thread_id}` REST endpoint
 
 **New file:** `app/agent/callbacks.py`

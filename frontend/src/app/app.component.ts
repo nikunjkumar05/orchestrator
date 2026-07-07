@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy, OnInit, AfterViewInit, ElementRef } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -9,8 +9,9 @@ interface ThoughtLog {
 }
 
 interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
+  toolName?: string;
 }
 
 interface ThreadInfo {
@@ -45,10 +46,21 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
   threadId: string | null = null;
   threads: ThreadInfo[] = [];
   showSidebar: boolean = false;
-
+  editingThreadId: string | null = null;
+  editingName: string = '';
+  openMenuThreadId: string | null = null;
+  tokenStats: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated_cost: number } | null = null;
   private socket: WebSocket | null = null;
   private sanitizer = inject(DomSanitizer);
   private el = inject(ElementRef);
+  @ViewChild('chatScroll') private chatScroll: ElementRef<HTMLElement> | null = null;
+
+  private scrollToBottom() {
+    const el = this.chatScroll?.nativeElement;
+    if (el) {
+      setTimeout(() => el.scrollTop = el.scrollHeight, 0);
+    }
+  }
 
   ngOnInit() {
     const saved = localStorage.getItem('theme');
@@ -59,6 +71,11 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
     }
     this.applyTheme();
     this.fetchThreads();
+
+    // Close dropdown on outside click
+    document.addEventListener('click', () => {
+      this.openMenuThreadId = null;
+    });
   }
 
   ngAfterViewInit() {
@@ -171,6 +188,7 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
     this.error = null;
     this.isWaitingForApproval = false;
     this.pendingApproval = null;
+    this.tokenStats = null;
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws`;
@@ -196,14 +214,22 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
 
         case 'token':
           this.streamedAnswer += data.content;
+          this.scrollToBottom();
           break;
 
         case 'status':
           this.logs.push({ type: 'status', content: data.content });
+          this.scrollToBottom();
           break;
 
         case 'file_preview':
           this.filePreviews.push(data.content);
+          this.scrollToBottom();
+          break;
+
+        case 'tool_result':
+          this.messages.push({ role: 'tool', content: data.content });
+          this.scrollToBottom();
           break;
 
         case 'approval_required':
@@ -214,11 +240,21 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
             id: data.id
           };
           this.isLoading = false;
+          this.scrollToBottom();
           break;
 
         case 'error':
           this.error = data.content;
           this.isLoading = false;
+          break;
+
+        case 'token_usage':
+          this.tokenStats = {
+            prompt_tokens: data.prompt_tokens,
+            completion_tokens: data.completion_tokens,
+            total_tokens: data.total_tokens,
+            estimated_cost: data.estimated_cost
+          };
           break;
 
         case 'done':
@@ -229,6 +265,7 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
           this.isLoading = false;
           this.fetchThreads();
           this.socket?.close();
+          this.scrollToBottom();
           break;
       }
     };
@@ -276,7 +313,28 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
       codeBlocks.push(`<div class="code-block"><div class="code-header"><span class="lang-label">${language}</span><button class="copy-btn" data-code="${encoded}" title="Copy code">${clipboardSvg}</button></div><pre><code>${cleanCode}</code></pre></div>`);
       return `%%CODEBLOCK_${idx}%%`;
     });
-    
+
+    // Parse markdown tables
+    const tableBlocks: string[] = [];
+    html = html.replace(/^(\|.+\|)\n(\|[\s:|-]+\|)\n((?:\|.+\|\n?)+)/gm, (match, headerRow, separatorRow, bodyRows) => {
+      const idx = tableBlocks.length;
+      const headers = headerRow.split('|').filter((c: string) => c.trim() !== '');
+      const rows = bodyRows.trim().split('\n').map((row: string) =>
+        row.split('|').filter((c: string) => c.trim() !== '')
+      );
+      let table = '<div class="table-wrap"><table><thead><tr>';
+      headers.forEach((h: string) => { table += `<th>${h.trim()}</th>`; });
+      table += '</tr></thead><tbody>';
+      rows.forEach((row: string[]) => {
+        table += '<tr>';
+        row.forEach((cell: string) => { table += `<td>${cell.trim()}</td>`; });
+        table += '</tr>';
+      });
+      table += '</tbody></table></div>';
+      tableBlocks.push(table);
+      return `%%TABLE_${idx}%%`;
+    });
+
     html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
     html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
     html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
@@ -334,6 +392,7 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
     html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="result-link">$1</a>');
     
     html = html.replace(/%%CODEBLOCK_(\d+)%%/g, (match, idx) => codeBlocks[parseInt(idx)]);
+    html = html.replace(/%%TABLE_(\d+)%%/g, (match, idx) => tableBlocks[parseInt(idx)]);
     
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
@@ -362,6 +421,51 @@ export class AppComponent implements OnDestroy, OnInit, AfterViewInit {
   copyThreadId() {
     if (this.threadId) {
       navigator.clipboard.writeText(this.threadId);
+    }
+  }
+
+  startRename(thread: ThreadInfo) {
+    this.editingThreadId = thread.thread_id;
+    this.editingName = thread.name;
+  }
+
+  toggleThreadMenu(threadId: string, event: Event) {
+    event.stopPropagation();
+    this.openMenuThreadId = this.openMenuThreadId === threadId ? null : threadId;
+  }
+
+  async saveRename() {
+    if (!this.editingThreadId || !this.editingName.trim()) return;
+    try {
+      await fetch(`/api/v1/threads/${this.editingThreadId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: this.editingName.trim() })
+      });
+      this.editingThreadId = null;
+      this.editingName = '';
+      await this.fetchThreads();
+    } catch (e) {
+      console.error('Failed to rename thread:', e);
+    }
+  }
+
+  cancelRename() {
+    this.editingThreadId = null;
+    this.editingName = '';
+  }
+
+  async deleteThread(threadId: string, event: Event) {
+    event.stopPropagation();
+    if (!confirm('Delete this conversation?')) return;
+    try {
+      await fetch(`/api/v1/threads/${threadId}`, { method: 'DELETE' });
+      if (this.threadId === threadId) {
+        this.newThread();
+      }
+      await this.fetchThreads();
+    } catch (e) {
+      console.error('Failed to delete thread:', e);
     }
   }
 
