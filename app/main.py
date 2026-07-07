@@ -11,7 +11,7 @@ from app.models import PromptRequest, AgentResponse
 from pydantic import BaseModel
 from app.agent import graph
 from app.agent.graph import init_checkpointer, build_agent
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,13 @@ async def execute_prompt(request: PromptRequest):
             raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-        inputs = {"messages": [("user", request.prompt)]}
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
+        inputs = {
+            "messages": [
+                SystemMessage(content=f"Current date and time: {now}. Always use the current date when searching for news or recent information."),
+                ("user", request.prompt)
+            ]
+        }
 
         result = await agent_executor.ainvoke(inputs, config=config)
         final_message = result["messages"][-1].content
@@ -281,7 +287,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             prompt = message_data["prompt"]
-            inputs = {"messages": [("user", prompt)]}
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
+            inputs = {
+                "messages": [
+                    SystemMessage(content=f"Current date and time: {now}. Always use the current date when searching for news or recent information."),
+                    ("user", prompt)
+                ]
+            }
 
             # Fix interrupted threads: inject synthetic ToolMessage for pending tool calls
             try:
