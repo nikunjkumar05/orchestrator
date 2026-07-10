@@ -4,7 +4,7 @@ import logging
 import warnings
 from langchain_core.tools import tool
 from duckduckgo_search import DDGS
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_community.utilities.sql_database import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
@@ -24,7 +24,7 @@ def search_tool(query: str) -> str:
     """Search the web for information using Tavily (on Cloud) or DuckDuckGo (Locally)."""
     if os.getenv("TAVILY_API_KEY"):
         try:
-            tavily = TavilySearchResults(max_results=5)
+            tavily = TavilySearch(max_results=5)
             results = tavily.invoke(query)
             if results:
                 return str(results)
